@@ -70,3 +70,67 @@ struct BeginGtxResponse {
 **/
     2: i16 stepSeq
 }
+
+/**
+* 事务状态,1:新建(CREATED);2:成功(SUCCEED);3:失败(FAILED);4:完成(DONE)
+**/
+enum TxStatus {
+/**
+* 新建
+**/
+    CREATED = 1,
+/**
+* 成功
+**/
+    SUCCEED = 2,
+/**
+* 失败
+**/
+    FAILED = 3,
+/**
+* 完成
+**/
+    DONE = 4
+}
+
+/**
+* 更新全局事务状态
+**/
+struct UpdateGtxRequest {
+/**
+* 全局事务id
+ **/
+    1: i64 gtxId,
+/**
+* 子事务id
+**/
+    2: i64 stepId,
+/**
+* 子事务序号，1为事务发起方序号，参与方依次递增
+**/
+    3: i16 stepSeq
+/**
+* 子事务状态，1:新建(CREATED);2:成功(SUCCEED);3:失败(FAILED);4:完成(DONE)
+**/
+    4: TxStatus status,
+}
+
+/**
+* confirm请求
+**/
+struct confirmRequest {
+/**
+* 全局事务id
+ **/
+    1: i64 gtxId,
+}
+
+/**
+* cancel请求
+**/
+struct cancelRequest {
+/**
+* 全局事务id
+ **/
+    1: i64 gtxId,
+}
