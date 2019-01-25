@@ -20,7 +20,7 @@ lazy val api = (project in file("transaction-manager-api"))
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true),
     publishM2Configuration := publishM2Configuration.value.withOverwrite(true),
     libraryDependencies ++= Seq(
-      "com.github.dapeng-soa" % "dapeng-client-netty" % "2.1.1"
+      "com.github.dapeng-soa" % "dapeng-client-netty" % "2.1.2-SNAPSHOT"
     )
   ).enablePlugins(ThriftGeneratorPlugin)
 
@@ -32,7 +32,7 @@ lazy val service = (project in file("transaction-manager-service"))
     name := "transaction-manager_service",
     crossPaths := false,
     libraryDependencies ++= Seq(
-      "com.github.dapeng-soa" % "dapeng-spring" % "2.1.1",
+      "com.github.dapeng-soa" % "dapeng-spring" % "2.1.2-SNAPSHOT",
       "com.github.wangzaixiang" %% "scala-sql" % "2.0.6",
       "org.slf4j" % "slf4j-api" % "1.7.13",
       "org.slf4j" % "jcl-over-slf4j" % "1.7.25",

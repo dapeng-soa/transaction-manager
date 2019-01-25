@@ -27,33 +27,33 @@
 **/
 struct BeginGtxRequest {
 /**
-* 全局事务id
- **/
-    1: i64 gtxId,
-/**
 * 参与全局事务的服务名
 **/
-    2: string serviceName,
+    1: string serviceName,
 /**
 * 参与全局事务的服务版本号
 **/
-    3: string version,
+    2: string version,
 /**
 * 参与全局事务的方法名
 **/
-    4: string method,
+    3: string method,
 /**
 * `try`阶段业务请求参数, 二进制方式
 **/
-    5: optional binary params,
+    4: optional binary params,
 /**
 * `confirm`阶段的方法名, 默认为`s"${method}_confirm"`
 **/
-    6: optional string confirmMethod,
+    5: optional string confirmMethod,
 /**
 * `cancel`阶段的方法名, 默认为`s"${method}_cancel"`
 **/
-    7: optional string cancelMethod,
+    6: optional string cancelMethod,
+/**
+* 是否使用异步
+**/
+    7: optional bool isAsync,
 /**
 * 事务超时时间。过了超时时间后状态不是`完成`的话，会有定时器重试
 **/
@@ -62,13 +62,17 @@ struct BeginGtxRequest {
 
 struct BeginGtxResponse {
 /**
+* 全局事务id
+**/
+    1:i64 gtxId,
+/**
 * 子事务id
 **/
-    1: i64 stepId,
+    2: i64 stepId,
 /**
 * 子事务序号，1为事务发起方序号，参与方依次递增
 **/
-    2: i16 stepSeq
+    3: i16 stepSeq
 }
 
 /**
@@ -102,17 +106,23 @@ struct UpdateGtxRequest {
  **/
     1: i64 gtxId,
 /**
+* 事务状态，1:新建(CREATED);2:成功(SUCCEED);3:失败(FAILED);4:完成(DONE)
+**/
+    2: TxStatus status,
+}
+
+/**
+* 更新子事务状态
+**/
+struct UpdateStepRequest {
+/**
 * 子事务id
 **/
-    2: i64 stepId,
-/**
-* 子事务序号，1为事务发起方序号，参与方依次递增
-**/
-    3: i16 stepSeq
+    1: i64 stepId,
 /**
 * 子事务状态，1:新建(CREATED);2:成功(SUCCEED);3:失败(FAILED);4:完成(DONE)
 **/
-    4: TxStatus status,
+    2: TxStatus status,
 }
 
 /**

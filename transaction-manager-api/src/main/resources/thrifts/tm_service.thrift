@@ -47,13 +47,10 @@ tm_vo.BeginGtxResponse beginGtx(1: tm_vo.BeginGtxRequest gtxReq)
 /**
 # 更新全局事务
 ## 前置检查
-1.通过gtxReq.gtxId，在t_gtx中查询是否已存在该全局事务。如果没有，那么抛异常"Err-Gtx-003"；
-1.通过gtxReq.stepId, 在t_gtx_step中查询是否已存在该子事务。如果没有，那么抛异常"Err-Gtx-004"；
+1. 通过gtxReq.gtxId，在t_gtx中查询是否已存在该全局事务。如果没有，那么抛异常"Err-Gtx-003"；
 
 ## 业务逻辑
-1. 如果子事务的序号为1，那么该子事务为事务发起方，全局事务的最终状态跟事务发起方的状态一致。
-2. 如果该子事务为事务发起方，那么更新全局事务状态, 备注为: 新建->成功/失败
-3. 更新子事务状态, 备注为: 新建->成功/失败
+1. 更新全局事务状态, 备注为: 新建->成功/失败
 
 ## 接口依赖
  无
@@ -65,10 +62,29 @@ tm_vo.UpdateGtxRequest
 Err-Gtx-002:Update gtx error
 
 Err-Gtx-003:No such gtx
-
-Err-Gtx-004:No such gtx step
 **/
 void updateGtx(1: tm_vo.UpdateGtxRequest gtxReq)
+
+/**
+# 更新子事务
+## 前置检查
+1. 通过gtxReq.stepId, 在t_gtx_step中查询是否已存在该子事务。如果没有，那么抛异常"Err-Gtx-004"；
+
+## 业务逻辑
+1. 更新子事务状态, 备注为: 新建->成功/失败
+
+## 接口依赖
+ 无
+## 输入
+tm_vo.UpdateStepRequest
+## 输出
+无
+## 异常码
+Err-Gtx-004:No such gtx step
+
+Err-Gtx-012:Updata step err
+**/
+void updateStep(1: tm_vo.UpdateStepRequest stepReq)
 
 /**
 # 确认全局事务
