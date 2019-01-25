@@ -6,7 +6,7 @@ resolvers ++= List("today nexus" at "http://nexus.today36524.td/repository/maven
 
 lazy val commonSettings = Seq(
   organization := "com.github.dapeng",
-  version := "2.1.1-RELEASE",
+  version := "2.1.2-SNAPSHOT",
   scalaVersion := "2.12.2"
 )
 
