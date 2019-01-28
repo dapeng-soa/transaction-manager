@@ -1,19 +1,19 @@
-name := "transaction-manager"
+name := "dapeng-transaction-manager"
 
 resolvers += Resolver.mavenLocal
 resolvers ++= List("today nexus" at "http://nexus.today36524.td/repository/maven-public/")
 
 
 lazy val commonSettings = Seq(
-  organization := "com.github.dapeng",
+  organization := "com.github.dapeng-soa",
   version := "2.1.1-RELEASE",
   scalaVersion := "2.12.2"
 )
 
-lazy val api = (project in file("transaction-manager-api"))
+lazy val api = (project in file("dapeng-transaction-manager-api"))
   .settings(
     commonSettings,
-    name := "transaction-manager-api",
+    name := "dapeng-transaction-manager-api",
     publishTo := Some("today-snapshots" at "http://nexus.today36524.td/repository/maven-releases/"),
     credentials += Credentials("Sonatype Nexus Repository Manager", "nexus.today36524.td", "central-services", "E@Z.nrW3"),
     publishConfiguration := publishConfiguration.value.withOverwrite(true),
@@ -25,11 +25,11 @@ lazy val api = (project in file("transaction-manager-api"))
   ).enablePlugins(ThriftGeneratorPlugin)
 
 
-lazy val service = (project in file("transaction-manager-service"))
+lazy val service = (project in file("dapeng-transaction-manager-service"))
   .dependsOn( api )
   .settings(
     commonSettings,
-    name := "transaction-manager_service",
+    name := "dapeng-transaction-manager_service",
     crossPaths := false,
     libraryDependencies ++= Seq(
       "com.github.dapeng-soa" % "dapeng-spring" % "2.1.1",
@@ -46,6 +46,7 @@ lazy val service = (project in file("transaction-manager-service"))
       "com.today" %% "idgen-api" % "2.1.1",
       "org.scalaj" % "scalaj-http_2.12" % "2.3.0",
       "org.springframework" % "spring-tx" % "4.3.5.RELEASE",
+      "com.github.dapeng-soa" % "dapeng-container-impl" % "2.1.1",
       "org.springframework" % "spring-jdbc" % "4.3.5.RELEASE"
     )).enablePlugins(ImageGeneratorPlugin)
   .enablePlugins(DbGeneratePlugin)

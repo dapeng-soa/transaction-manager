@@ -45,32 +45,6 @@ Err-Gtx-001: Begin gtx error
 tm_vo.BeginGtxResponse beginGtx(1: tm_vo.BeginGtxRequest gtxReq)
 
 /**
-# 更新全局事务
-## 前置检查
-1.通过gtxReq.gtxId，在t_gtx中查询是否已存在该全局事务。如果没有，那么抛异常"Err-Gtx-003"；
-1.通过gtxReq.stepId, 在t_gtx_step中查询是否已存在该子事务。如果没有，那么抛异常"Err-Gtx-004"；
-
-## 业务逻辑
-1. 如果子事务的序号为1，那么该子事务为事务发起方，全局事务的最终状态跟事务发起方的状态一致。
-2. 如果该子事务为事务发起方，那么更新全局事务状态, 备注为: 新建->成功/失败
-3. 更新子事务状态, 备注为: 新建->成功/失败
-
-## 接口依赖
- 无
-## 输入
-tm_vo.UpdateGtxRequest
-## 输出
-无
-## 异常码
-Err-Gtx-002:Update gtx error
-
-Err-Gtx-003:No such gtx
-
-Err-Gtx-004:No such gtx step
-**/
-void updateGtx(1: tm_vo.UpdateGtxRequest gtxReq)
-
-/**
 # 确认全局事务
 ## 前置检查
 1. 通过gtxReq.gtxId，在t_gtx表中查询是否已存在该全局事务。如果没有，那么抛异常"Err-Gtx-003".
@@ -103,7 +77,7 @@ Err-Gtx-007:No gtx steps
 
 Err-Gtx-008:Gtx step confirm failed
 **/
-void confirm(1: tm_vo.confirmRequest gtxReq)
+void confirm(1: tm_vo.CcRequest gtxReq)
 
 /**
 # 回滚全局事务
@@ -138,6 +112,6 @@ Err-Gtx-010:Try to cancel a succeed gtx
 
 Err-Gtx-011:Gtx step cancel failed
 **/
-void cancel(1: tm_vo.cancelRequest gtxReq)
+void cancel(1: tm_vo.CcRequest gtxReq)
 
 }
