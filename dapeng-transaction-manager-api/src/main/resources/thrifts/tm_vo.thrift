@@ -62,13 +62,17 @@ struct BeginGtxRequest {
 
 struct BeginGtxResponse {
 /**
+* 全局事务id
+**/
+    1:i64 gtxId,
+/**
 * 子事务id
 **/
-    1: i64 stepId,
+    2: i64 stepId,
 /**
 * 子事务序号，1为事务发起方序号，参与方依次递增
 **/
-    2: i16 stepSeq
+    3: i16 stepSeq
 }
 
 /**

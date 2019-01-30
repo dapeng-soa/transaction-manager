@@ -18,6 +18,7 @@
 package com.github.dapeng.tm.service
 
 import java.io.StringReader
+import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 
 import com.github.dapeng.client.netty.{JsonPost, TSoaTransport}
 import com.github.dapeng.core.helper.SoaSystemEnvProperties
@@ -26,30 +27,22 @@ import com.github.dapeng.core.{SoaException, TransactionContext}
 import com.github.dapeng.json.{JsonSerializer, OptimizedMetadata}
 import com.github.dapeng.metadata.MetadataClient
 import com.github.dapeng.org.apache.thrift.protocol.TBinaryProtocol
-import com.github.dapeng.tm.service.entity.{TGtxStep, UpdateGtxRequest, UpdateStepRequest}
+import com.github.dapeng.tm.service.entity.{TGtx, TGtxStep, UpdateGtxRequest, UpdateStepRequest}
 import com.github.dapeng.tm.service.exception.TmException
 import com.github.dapeng.tm.service.sql.TxQuery
 import com.github.dapeng.tm.util.TccInvocker
-
 /*import com.google.common.util.concurrent.ThreadFactoryBuilder*/
-
 import com.today.service.commons.Assert
-import io.netty.buffer.{AbstractByteBufAllocator, ByteBuf, PooledByteBufAllocator, UnpooledByteBufAllocator}
-import javax.xml.bind.JAXB
 import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
 
 import scala.collection.mutable
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import scala.util.{Failure, Success}
 
 
 @Transactional(rollbackFor = Array(classOf[Throwable]))
 class TransactionManagerImpl extends TransactionManagerService {
   private val LOGGER = LoggerFactory.getLogger(getClass)
-  private val serviceMetadata = new mutable.HashMap[String, OptimizedMetadata.OptimizedService]()
-  /*  private val schedulerExecutorService: ScheduledExecutorService = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("dapeng-" + getClass.getSimpleName + "-scheduler-%d").build())*/
+/*  private val schedulerExecutorService: ScheduledExecutorService = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("dapeng-" + getClass.getSimpleName + "-scheduler-%d").build())*/
 
   /**
     *
@@ -73,13 +66,12 @@ class TransactionManagerImpl extends TransactionManagerService {
     **/
   override def beginGtx(gtxReq: BeginGtxRequest): BeginGtxResponse = {
     try {
-      val isGtx: String = TransactionContext.Factory.currentInstance().getHeader.getCookies.get("gtxId")
-      if (isGtx == null) {
+      val isGtx: Long = TransactionContext.Factory.currentInstance().getHeader.getTransactionId.orElse(0L)
+      if (isGtx.equals(0L)) {
         val gtxId = TxQuery.createGtx(gtxReq)
-        TransactionContext.Factory.currentInstance().getHeader.addCookie("gtxId", gtxId.toString)
         TxQuery.createGtxStep(gtxReq, gtxId, true)
       } else {
-        TxQuery.createGtxStep(gtxReq, isGtx.toLong, false)
+        TxQuery.createGtxStep(gtxReq, isGtx, false)
       }
     } catch {
       case e: Throwable =>
@@ -195,9 +187,9 @@ class TransactionManagerImpl extends TransactionManagerService {
   override def confirm(gtxReq: CcRequest): Unit = {
     Assert.assert(!TxQuery.isGtx(gtxReq.gtxId), TmException.noGtx("No such gtx"))
     val status = TxQuery.getGtxStatus(gtxReq.gtxId)
-    if (status.equals(3)) {
+    if (status.equals(4)) {
       Assert.assert(false, TmException.duplicationConfirm("Duplicated confirms"))
-    } else if (status.equals(4)) {
+    } else if (status.equals(3)) {
       Assert.assert(false, TmException.confirmFailedGtx("Try to confirm a failed gtx"))
     }
     Assert.assert(TxQuery.getGtxSteps(gtxReq.gtxId).nonEmpty, TmException.noGtxSteps("No gtx steps"))
@@ -206,17 +198,20 @@ class TransactionManagerImpl extends TransactionManagerService {
 
     val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id.equals(4)).sortWith((left, right) => left.stepSeq < right.stepSeq)
 
+    var confirmSuccess = false
     try {
       if (TxQuery.isAsync(gtxReq.gtxId)) {
-        confirmAsync(gtxSteps)
+        confirmSuccess = confirmAsync(gtxSteps)
       } else {
-        confirmSync(gtxSteps)
+        confirmSuccess = confirmSync(gtxSteps)
       }
     } catch {
       case e: Throwable => LOGGER.error(e.getMessage)
         throw new SoaException("Err-Gtx-008", "tx step confirm failed")
     }
-    updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
+    if (confirmSuccess) {
+      updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
+    }
   }
 
   /**
@@ -269,17 +264,20 @@ class TransactionManagerImpl extends TransactionManagerService {
 
     val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id.equals(4)).sortWith((left, right) => left.stepSeq > right.stepSeq)
 
+    var cancelSuccess = false
     try {
       if (TxQuery.isAsync(gtxReq.gtxId)) {
-        cancelAsync(gtxSteps)
+        cancelSuccess = cancelAsync(gtxSteps)
       } else {
-        cancelSync(gtxSteps)
+        cancelSuccess = cancelSync(gtxSteps)
       }
     } catch {
       case e: Throwable => LOGGER.error(e.getMessage)
         throw new SoaException("Err-Gtx-011", "Gtx step cancel failed")
     }
-    updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
+    if (cancelSuccess) {
+      updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
+    }
   }
 
   /**
@@ -287,20 +285,24 @@ class TransactionManagerImpl extends TransactionManagerService {
     *
     * 当一个子事务confirm失败，剩余子事务的处理？
     */
-  def confirmAsync(gtxSteps: List[TGtxStep]): Unit = {
+  def confirmAsync(gtxSteps: List[TGtxStep]): Boolean = {
     val result = gtxSteps map (gtxStep => {
       new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.confirmMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
     })
+    var confirmSuccess = true
     result.foreach(x => {
       x._2.whenComplete((resp, ex) => {
         if (null == ex) {
           updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
         } else {
+          confirmSuccess = false
+          updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
           LOGGER.error(ex.getMessage)
         }
       }
       )
     })
+    confirmSuccess
   }
 
   /**
@@ -308,17 +310,20 @@ class TransactionManagerImpl extends TransactionManagerService {
     *
     * 当一个子事务confirm失败，剩余子事务也取消confirm
     */
-  def confirmSync(gtxSteps: List[TGtxStep]): Unit = {
+  def confirmSync(gtxSteps: List[TGtxStep]): Boolean = {
+    val confirmSuccess = true
     gtxSteps.foreach(gtxStep => {
       try {
         new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.confirmMethodName.get, gtxStep.request.orNull, gtxStep.id).invokeSync
         updateStep(UpdateStepRequest(gtxStep.id, TxStatus.DONE))
       } catch {
         case e: Throwable =>
+          updateStep(UpdateStepRequest(gtxStep.id, TxStatus.FAILED))
           LOGGER.error(e.getMessage)
           throw new SoaException("Err-Gtx-013", "confirm step failed")
       }
     })
+    confirmSuccess
   }
 
   /**
@@ -326,20 +331,24 @@ class TransactionManagerImpl extends TransactionManagerService {
     *
     * 当一个子事务cancel失败，剩余子事务的处理？
     */
-  def cancelAsync(gtxSteps: List[TGtxStep]): Unit = {
+  def cancelAsync(gtxSteps: List[TGtxStep]): Boolean = {
     val result = gtxSteps map (gtxStep => {
       new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.cancelMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
     })
+    var cancelSuccess = true
     result.foreach(x => {
       x._2.whenComplete((resp, ex) => {
         if (null == ex) {
           updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
         } else {
+          cancelSuccess = false
+          updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
           LOGGER.error(ex.getMessage)
         }
       }
       )
     })
+    cancelSuccess
   }
 
   /**
@@ -347,34 +356,38 @@ class TransactionManagerImpl extends TransactionManagerService {
     *
     * 当一个子事务cancel失败，剩余子事务也取消cancel
     */
-  def cancelSync(gtxSteps: List[TGtxStep]): Unit = {
+  def cancelSync(gtxSteps: List[TGtxStep]): Boolean = {
+    val cancelSuccess = true
     gtxSteps.foreach(gtxStep => {
       try {
         new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.cancelMethodName.get, gtxStep.request.orNull, gtxStep.id).invokeSync
         updateStep(UpdateStepRequest(gtxStep.id, TxStatus.DONE))
       } catch {
         case e: Throwable =>
+          updateStep(UpdateStepRequest(gtxStep.id, TxStatus.FAILED))
           LOGGER.error(e.getMessage)
           throw new SoaException("Err-Gtx-014", "cancel step failed")
       }
     })
+    cancelSuccess
   }
 
   /**
     * 定时任务
     *
-    * 定时扫描子事务表，获取状态为非完成的事务，进行confirm/cancel
+    * 定时扫描全局事务表，获取状态为非完成/超时的事务，进行confirm/cancel
     **/
-  /*  schedulerExecutorService.scheduleAtFixedRate(() => {
-      val gtxWithNoDone: List[TGtx] = TxQuery.getGtxWithNoDone()
+/*  schedulerExecutorService.scheduleAtFixedRate(() => {
+    val gtxWithNoDone: List[TGtx] = TxQuery.getGtxWithNoDone
+    val gtxExpired: List[TGtx] = TxQuery.getGtxExpired
 
-      gtxWithNoDone.foreach(gtx => {
-        gtx.status.id match {
-          case 1 =>
-          case 2 => confirm(new confirmRequest(gtx.gtxId))
-          case 3 => cancel(new cancelRequest(gtx.gtxId))
-        }
-      })
+    gtxWithNoDone.foreach(gtx => {
+      gtx.status.id match {
+        case 1 => cancel(new CcRequest(gtx.gtxId))
+        case 2 => confirm(new CcRequest(gtx.gtxId))
+        case 3 => cancel(new CcRequest(gtx.gtxId))
+      }
+    })
 
-    }, 60, 60, TimeUnit.SECONDS)*/
+  }, 60, 60, TimeUnit.SECONDS)*/
 }

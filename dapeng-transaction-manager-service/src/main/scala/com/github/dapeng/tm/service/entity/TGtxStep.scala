@@ -42,7 +42,7 @@ confirmMethodName: Option[String],
  /**  */ 
 cancelMethodName: Option[String],
  /**  */ 
-redoTimes: Int,
+retryTimes: Int,
  /** 创建时间 */ 
 createdTime: Timestamp,
  /** 更新时间 */ 

@@ -82,8 +82,8 @@ object TxQuery {
     val step_seq: Short = if (isGtx) {
       1
     } else {
-      val result = dataSource.row[TGtxStep](sql"""select max(step_seq) from t_gtx_step where gtx_id = ${gtxId}""")
-      (result.get.stepSeq + 1).asInstanceOf[Short]
+      val result = dataSource.queryInt(sql"""select max(step_seq) from t_gtx_step where gtx_id = ${gtxId}""")
+      (result + 1).toShort
     }
     val request = gtxReq.params.orElse(null).array()
     val confirmMethod = gtxReq.confirmMethod.orElse(gtxReq.method + "_confirm")
@@ -101,11 +101,12 @@ object TxQuery {
            `request` = ${request},
            `confirm_method_name` = ${confirmMethod},
            `cancel_method_name` = ${cancelMethod},
-           `redo_times` = 0,
+           `retry_times` = 0,
            `created_time` = ${now},
            `remark` = '新建'
          """)
     val result = new BeginGtxResponse
+    result.setGtxId(gtxId)
     result.setStepId(id)
     result.setStepSeq(step_seq)
     result
@@ -119,7 +120,10 @@ object TxQuery {
     }
     dataSource.withTransaction { conn =>
       conn.executeUpdate(
-        sql"""update t_gtx set `status` = ${gtxReq.status.getValue},`remark` = concat(`remark`, ${remarkChanged}) where `gtx_id` = ${gtxReq.gtxId}"""
+        sql"""update t_gtx set
+             `status` = ${gtxReq.status.getValue},
+             `remark` = concat(`remark`, ${remarkChanged})
+             where `gtx_id` = ${gtxReq.gtxId}"""
       )
     }
   }
@@ -130,9 +134,26 @@ object TxQuery {
       case 3 => "-> 失败"
       case 4 => "-> 完成"
     }
-    dataSource.executeUpdate(
-      sql"""update t_gtx_step set `status` = ${gtxReq.status.getValue},`remark` = concat(`remark`, ${remarkChanged}) where `id` = ${gtxReq.stepId}"""
-    )
+    if (gtxReq.status.getValue.equals(3)) {
+      dataSource.withTransaction { conn =>
+        conn.executeUpdate(
+          sql"""update t_gtx_step set
+               `status` = ${gtxReq.status.getValue},
+               `remark` = concat(`remark`, ${remarkChanged}),
+               `retry_times` = `retry_time` + 1
+               where `id` = ${gtxReq.stepId}"""
+        )
+      }
+    } else {
+      dataSource.withTransaction { conn =>
+        conn.executeUpdate(
+          sql"""update t_gtx_step set
+               `status` = ${gtxReq.status.getValue},
+               `remark` = concat(`remark`, ${remarkChanged})
+               where `id` = ${gtxReq.stepId}"""
+        )
+      }
+    }
   }
 
   def getGtxStatus(gtxId: Long): Int = {
@@ -155,10 +176,15 @@ object TxQuery {
     result
   }
 
-  def getGtxWithNoDone(): List[TGtx] = {
+  def getGtxWithNoDone: List[TGtx] = {
     dataSource.rows[TGtx](
       sql"""select * from t_gtx where `status` <> 4;"""
     )
   }
 
+  def getGtxExpired: List[TGtx] = {
+    dataSource.rows[TGtx](
+      sql"""select * from t_gtx where unix_timestamp(expired_time) < unix_timestamp(now())"""
+    )
+  }
 }
