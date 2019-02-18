@@ -17,32 +17,24 @@
 
 package com.github.dapeng.tm.service
 
-import java.io.StringReader
 import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 
-import com.github.dapeng.client.netty.{JsonPost, TSoaTransport}
-import com.github.dapeng.core.helper.SoaSystemEnvProperties
-import com.github.dapeng.core.metadata.Service
 import com.github.dapeng.core.{SoaException, TransactionContext}
-import com.github.dapeng.json.{JsonSerializer, OptimizedMetadata}
-import com.github.dapeng.metadata.MetadataClient
-import com.github.dapeng.org.apache.thrift.protocol.TBinaryProtocol
 import com.github.dapeng.tm.service.entity.{TGtx, TGtxStep, UpdateGtxRequest, UpdateStepRequest}
 import com.github.dapeng.tm.service.exception.TmException
 import com.github.dapeng.tm.service.sql.TxQuery
 import com.github.dapeng.tm.util.TccInvocker
-/*import com.google.common.util.concurrent.ThreadFactoryBuilder*/
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.today.service.commons.Assert
 import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
 
-import scala.collection.mutable
 
 
 @Transactional(rollbackFor = Array(classOf[Throwable]))
 class TransactionManagerImpl extends TransactionManagerService {
   private val LOGGER = LoggerFactory.getLogger(getClass)
-/*  private val schedulerExecutorService: ScheduledExecutorService = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("dapeng-" + getClass.getSimpleName + "-scheduler-%d").build())*/
+  private val schedulerExecutorService: ScheduledExecutorService = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("dapeng-" + getClass.getSimpleName + "-scheduler-%d").build())
 
   /**
     *
@@ -375,13 +367,12 @@ class TransactionManagerImpl extends TransactionManagerService {
   /**
     * 定时任务
     *
-    * 定时扫描全局事务表，获取状态为非完成/超时的事务，进行confirm/cancel
+    * 定时扫描全局事务表，获取状态为超时且未完成的事务，进行confirm/cancel
     **/
-/*  schedulerExecutorService.scheduleAtFixedRate(() => {
-    val gtxWithNoDone: List[TGtx] = TxQuery.getGtxWithNoDone
-    val gtxExpired: List[TGtx] = TxQuery.getGtxExpired
+  schedulerExecutorService.scheduleAtFixedRate(() => {
+    val gtxExpiredAndNoDone: List[TGtx] = TxQuery.getGtxExpiredAndNoDone
 
-    gtxWithNoDone.foreach(gtx => {
+    gtxExpiredAndNoDone.foreach(gtx => {
       gtx.status.id match {
         case 1 => cancel(new CcRequest(gtx.gtxId))
         case 2 => confirm(new CcRequest(gtx.gtxId))
@@ -389,5 +380,5 @@ class TransactionManagerImpl extends TransactionManagerService {
       }
     })
 
-  }, 60, 60, TimeUnit.SECONDS)*/
+  }, 60, 60, TimeUnit.SECONDS)
 }

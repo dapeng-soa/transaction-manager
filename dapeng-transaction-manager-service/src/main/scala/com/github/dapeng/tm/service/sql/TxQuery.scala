@@ -55,7 +55,7 @@ object TxQuery {
     val id = GenIdUtil.getId(GenIdUtil.T_GTX_ID)
     val gtxId = GenIdUtil.getId(GenIdUtil.GTX_ID)
     val now = new Timestamp(System.currentTimeMillis())
-    val expiredAt = long2Date(gtxReq.expiredAt.orElse(System.currentTimeMillis() + 60000))
+    val expiredAt = long2Date(gtxReq.expiredAt.orElse(System.currentTimeMillis() + 60000 * 5))
     val isAsync: Int = if (gtxReq.isAsync.orElse(true)) {
       1
     } else {
@@ -176,15 +176,9 @@ object TxQuery {
     result
   }
 
-  def getGtxWithNoDone: List[TGtx] = {
+  def getGtxExpiredAndNoDone: List[TGtx] = {
     dataSource.rows[TGtx](
-      sql"""select * from t_gtx where `status` <> 4;"""
-    )
-  }
-
-  def getGtxExpired: List[TGtx] = {
-    dataSource.rows[TGtx](
-      sql"""select * from t_gtx where unix_timestamp(expired_time) < unix_timestamp(now())"""
+      sql"""select * from t_gtx where `status` <> 4 and unix_timestamp(expired_time) < unix_timestamp(now())"""
     )
   }
 }
