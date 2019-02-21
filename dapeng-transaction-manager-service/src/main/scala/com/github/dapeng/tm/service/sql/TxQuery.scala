@@ -87,9 +87,10 @@ object TxQuery {
     }
     val request = gtxReq.params.orElse(null).array()
     val confirmMethod = gtxReq.confirmMethod.orElse(gtxReq.method + "_confirm")
-    val cancelMethod = gtxReq.confirmMethod.orElse(gtxReq.method + "_cancel")
-    dataSource.executeUpdate(
-      sql"""
+    val cancelMethod = gtxReq.cancelMethod.orElse(gtxReq.method + "_cancel")
+    dataSource.withTransaction(conn =>
+      conn.executeUpdate(
+        sql"""
            insert into t_gtx_step set
            `id` = ${id},
            `gtx_id` = ${gtxId},
@@ -105,6 +106,7 @@ object TxQuery {
            `created_time` = ${now},
            `remark` = '新建'
          """)
+    )
     val result = new BeginGtxResponse
     result.setGtxId(gtxId)
     result.setStepId(id)
@@ -140,7 +142,7 @@ object TxQuery {
           sql"""update t_gtx_step set
                `status` = ${gtxReq.status.getValue},
                `remark` = concat(`remark`, ${remarkChanged}),
-               `retry_times` = `retry_time` + 1
+               `retry_times` = `retry_times` + 1
                where `id` = ${gtxReq.stepId}"""
         )
       }

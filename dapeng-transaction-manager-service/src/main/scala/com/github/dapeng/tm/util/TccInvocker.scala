@@ -43,7 +43,7 @@ class TccInvocker(val serviceName: String, val version: String, val method: Stri
     (id, result)
   }
 
-  def invokeSync = {
+  def invokeSync: Array[Byte] = {
     val invocationContext = InvocationContextImpl.Factory.currentInstance
     capsuleContext(invocationContext.asInstanceOf[InvocationContextImpl], clientInfo.serviceName, clientInfo.version, method)
 

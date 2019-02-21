@@ -30,7 +30,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
 
 
-
 @Transactional(rollbackFor = Array(classOf[Throwable]))
 class TransactionManagerImpl extends TransactionManagerService {
   private val LOGGER = LoggerFactory.getLogger(getClass)
@@ -243,11 +242,12 @@ class TransactionManagerImpl extends TransactionManagerService {
     *
     **/
   override def cancel(gtxReq: CcRequest): Unit = {
-    Assert.assert(TxQuery.isGtx(gtxReq.gtxId), TmException.noGtx("No such gtx"))
+    Assert.assert(!TxQuery.isGtx(gtxReq.gtxId), TmException.noGtx("No such gtx"))
     val status = TxQuery.getGtxStatus(gtxReq.gtxId)
-    status match {
-      case 3 => Assert.assert(false, TmException.duplicationCancel("Duplicated cancels"))
-      case 4 => Assert.assert(false, TmException.cancelSucceedGtx("Try to cancel a succeed gtx"))
+    if (status.equals(4)) {
+      Assert.assert(false, TmException.duplicationCancel("Duplicated cancels"))
+    } else if (status.equals(2)) {
+      Assert.assert(false, TmException.cancelSucceedGtx("Try to cancel a succeed gtx"))
     }
 
     Assert.assert(TxQuery.getGtxSteps(gtxReq.gtxId).nonEmpty, TmException.noGtxSteps("No gtx steps"))
@@ -373,10 +373,12 @@ class TransactionManagerImpl extends TransactionManagerService {
     val gtxExpiredAndNoDone: List[TGtx] = TxQuery.getGtxExpiredAndNoDone
 
     gtxExpiredAndNoDone.foreach(gtx => {
+      val request: CcRequest = new CcRequest()
+      request.setGtxId(gtx.gtxId)
       gtx.status.id match {
-        case 1 => cancel(new CcRequest(gtx.gtxId))
-        case 2 => confirm(new CcRequest(gtx.gtxId))
-        case 3 => cancel(new CcRequest(gtx.gtxId))
+        case 1 => cancel(request)
+        case 2 => confirm(request)
+        case 3 => cancel(request)
       }
     })
 
