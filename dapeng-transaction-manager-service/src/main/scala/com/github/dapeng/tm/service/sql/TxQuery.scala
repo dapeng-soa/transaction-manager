@@ -18,7 +18,6 @@ package com.github.dapeng.tm.service.sql
 
 import java.sql.Timestamp
 
-import com.github.dapeng.tm.scala.service
 import com.github.dapeng.tm.service.entity.{TGtx, TGtxStep, UpdateGtxRequest, UpdateStepRequest}
 import com.github.dapeng.tm.service.enums.TStatus
 import com.github.dapeng.tm.service.util.GenIdUtil

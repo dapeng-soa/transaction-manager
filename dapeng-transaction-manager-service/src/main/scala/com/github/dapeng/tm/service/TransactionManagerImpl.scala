@@ -17,7 +17,7 @@
 
 package com.github.dapeng.tm.service
 
-import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
+import java.util.concurrent.{CompletableFuture, Executors, ScheduledExecutorService, TimeUnit}
 
 import com.github.dapeng.core.{SoaException, TransactionContext}
 import com.github.dapeng.tm.service.entity.{TGtx, TGtxStep, UpdateGtxRequest, UpdateStepRequest}
@@ -28,6 +28,8 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.today.service.commons.Assert
 import org.slf4j.LoggerFactory
 import org.springframework.transaction.annotation.Transactional
+
+import scala.collection.mutable.ArrayBuffer
 
 
 @Transactional(rollbackFor = Array(classOf[Throwable]))
@@ -58,7 +60,7 @@ class TransactionManagerImpl extends TransactionManagerService {
   override def beginGtx(gtxReq: BeginGtxRequest): BeginGtxResponse = {
     try {
       val isGtx: Long = TransactionContext.Factory.currentInstance().getHeader.getTransactionId.orElse(0L)
-      if (isGtx.equals(0L)) {
+      if (isGtx == 0L) {
         val gtxId = TxQuery.createGtx(gtxReq)
         TxQuery.createGtxStep(gtxReq, gtxId, true)
       } else {
@@ -178,32 +180,32 @@ class TransactionManagerImpl extends TransactionManagerService {
   override def confirm(gtxReq: CcRequest): Unit = {
     Assert.assert(!TxQuery.isGtx(gtxReq.gtxId), TmException.noGtx("No such gtx"))
     val status = TxQuery.getGtxStatus(gtxReq.gtxId)
-    if (status.equals(4)) {
+    if (status == 4) {
       Assert.assert(false, TmException.duplicationConfirm("Duplicated confirms"))
-    } else if (status.equals(3)) {
+    } else if (status == 3) {
       Assert.assert(false, TmException.confirmFailedGtx("Try to confirm a failed gtx"))
     }
     Assert.assert(TxQuery.getGtxSteps(gtxReq.gtxId).nonEmpty, TmException.noGtxSteps("No gtx steps"))
 
     updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.SUCCEED))
 
-    val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id.equals(4)).sortWith((left, right) => left.stepSeq < right.stepSeq)
+    val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id == 4).sortWith((left, right) => left.stepSeq < right.stepSeq)
 
     if (gtxSteps.isEmpty) {
       updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
-    }
-
-    try {
-      if (TxQuery.isAsync(gtxReq.gtxId)) {
-        confirmAsync(gtxSteps)
-      } else {
-        confirmSync(gtxSteps)
+    } else {
+      try {
+        if (TxQuery.isAsync(gtxReq.gtxId)) {
+          confirmAsync(gtxSteps)
+        } else {
+          confirmSync(gtxSteps)
+        }
+      } catch {
+        case e: Throwable => LOGGER.error(e.getMessage)
+          throw new SoaException("Err-Gtx-008", "tx step confirm failed")
       }
-    } catch {
-      case e: Throwable => LOGGER.error(e.getMessage)
-        throw new SoaException("Err-Gtx-008", "tx step confirm failed")
+      updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
     }
-    updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
   }
 
   /**
@@ -245,9 +247,9 @@ class TransactionManagerImpl extends TransactionManagerService {
   override def cancel(gtxReq: CcRequest): Unit = {
     Assert.assert(!TxQuery.isGtx(gtxReq.gtxId), TmException.noGtx("No such gtx"))
     val status = TxQuery.getGtxStatus(gtxReq.gtxId)
-    if (status.equals(4)) {
+    if (status == 4) {
       Assert.assert(false, TmException.duplicationCancel("Duplicated cancels"))
-    } else if (status.equals(2)) {
+    } else if (status == 2) {
       Assert.assert(false, TmException.cancelSucceedGtx("Try to cancel a succeed gtx"))
     }
 
@@ -255,23 +257,23 @@ class TransactionManagerImpl extends TransactionManagerService {
 
     updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.FAILED))
 
-    val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id.equals(4)).sortWith((left, right) => left.stepSeq > right.stepSeq)
+    val gtxSteps: List[TGtxStep] = TxQuery.getGtxSteps(gtxReq.gtxId).filterNot(x => x.status.id == 4).sortWith((left, right) => left.stepSeq > right.stepSeq)
 
     if (gtxSteps.isEmpty) {
       updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
-    }
-
-    try {
-      if (TxQuery.isAsync(gtxReq.gtxId)) {
-        cancelAsync(gtxSteps)
-      } else {
-        cancelSync(gtxSteps)
+    } else {
+      try {
+        if (TxQuery.isAsync(gtxReq.gtxId)) {
+          cancelAsync(gtxSteps)
+        } else {
+          cancelSync(gtxSteps)
+        }
+      } catch {
+        case e: Throwable => LOGGER.error(e.getMessage)
+          throw new SoaException("Err-Gtx-011", "Gtx step cancel failed")
       }
-    } catch {
-      case e: Throwable => LOGGER.error(e.getMessage)
-        throw new SoaException("Err-Gtx-011", "Gtx step cancel failed")
+      updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
     }
-    updateGtx(UpdateGtxRequest(gtxReq.gtxId, TxStatus.DONE))
   }
 
   /**
@@ -280,21 +282,27 @@ class TransactionManagerImpl extends TransactionManagerService {
     * 当一个子事务confirm失败，剩余子事务的处理？
     */
   def confirmAsync(gtxSteps: List[TGtxStep]): Unit = {
-    val result = gtxSteps map (gtxStep => {
-      new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.confirmMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
+    val futureResult = new ArrayBuffer[CompletableFuture[Array[Byte]]]()
+    val result: List[(Int, CompletableFuture[Array[Byte]])] = gtxSteps map (gtxStep => {
+      println("confirm method name " + gtxStep.confirmMethodName)
+      val tmp = new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.confirmMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
+      futureResult += tmp._2
+      tmp
     })
+    try {
+      CompletableFuture.allOf(futureResult.toArray: _*).join()
+    } catch {
+      case e: Throwable => LOGGER.error(e.getMessage)
+    }
+
     var confirmSuccess = true
     result.foreach(x => {
-      x._2.whenComplete((resp, ex) => {
-        if (null == ex) {
-          updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
-        } else {
-          confirmSuccess = false
-          updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
-          LOGGER.error(ex.getMessage)
-        }
+      if (x._2.isCompletedExceptionally) {
+        confirmSuccess = false
+        updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
+      } else {
+        updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
       }
-      )
     })
     if (!confirmSuccess) {
       throw new SoaException("Err-Gtx-013", "confirm step failed")
@@ -326,21 +334,26 @@ class TransactionManagerImpl extends TransactionManagerService {
     * 当一个子事务cancel失败，剩余子事务的处理？
     */
   def cancelAsync(gtxSteps: List[TGtxStep]): Unit = {
+    val futureResult = new ArrayBuffer[CompletableFuture[Array[Byte]]]()
     val result = gtxSteps map (gtxStep => {
-      new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.cancelMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
+      val tmp = new TccInvocker(gtxStep.serviceName, gtxStep.version, gtxStep.cancelMethodName.get, gtxStep.request.orNull, gtxStep.id).invoke
+      futureResult += tmp._2
+      tmp
     })
+    try {
+      CompletableFuture.allOf(futureResult.toArray: _*).join()
+    } catch {
+      case e: Throwable => LOGGER.error(e.getMessage)
+    }
+
     var cancelSuccess = true
     result.foreach(x => {
-      x._2.whenComplete((resp, ex) => {
-        if (null == ex) {
-          updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
-        } else {
-          cancelSuccess = false
-          updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
-          LOGGER.error(ex.getMessage)
-        }
+      if (x._2.isCompletedExceptionally) {
+        cancelSuccess = false
+        updateStep(UpdateStepRequest(x._1, TxStatus.FAILED))
+      } else {
+        updateStep(UpdateStepRequest(x._1, TxStatus.DONE))
       }
-      )
     })
     if (!cancelSuccess) {
       throw new SoaException("Err-Gtx-011", "Gtx step cancel failed")
@@ -373,7 +386,6 @@ class TransactionManagerImpl extends TransactionManagerService {
     **/
   schedulerExecutorService.scheduleAtFixedRate(() => {
     val gtxExpiredAndNoDone: List[TGtx] = TxQuery.getGtxExpiredAndNoDone
-
     gtxExpiredAndNoDone.foreach(gtx => {
       try {
         val request: CcRequest = new CcRequest()
@@ -383,8 +395,8 @@ class TransactionManagerImpl extends TransactionManagerService {
           case 2 => confirm(request)
           case 3 => cancel(request)
         }
-      }catch {
-        case e : Throwable =>
+      } catch {
+        case e: Throwable =>
           LOGGER.error(e.getMessage)
       }
     })
